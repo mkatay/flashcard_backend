@@ -2,46 +2,53 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import cors from "cors";
 import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
 
 dotenv.config();
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: "http://localhost:5173", // frontend címe
+  credentials: true,               // fontos!!
+}));
 
-// Bejelentkezés — ellenőriz egy kulcsot, majd visszaad egy JWT-t
+app.use(express.json());
+app.use(cookieParser());
+
+//token  csak a backend és a browser között él, nem kerül kliens oldalra
 app.post("/login", (req, res) => {
   const { key } = req.body;
-  if (!key) return res.status(400).json({ error: "Missing key" });
+  if (key !== process.env.AUTH_KEY) return res.status(401).json({ error: "Invalid key" });
+  const token = jwt.sign({ access: true }, process.env.JWT_SECRET,{ expiresIn: "2h" });
+  res.cookie("token", token, {
+    httpOnly: true,   // JS NEM fér hozzá
+    secure: false,    // prod-ban true (https)
+    sameSite: "strict",
+    maxAge: 2 * 60 * 60 * 1000,
+  });
 
-  if (key !== process.env.AUTH_KEY) {
-    return res.status(401).json({ error: "Invalid key" });
-  }
-  const token = jwt.sign({ access: true }, process.env.JWT_SECRET, { expiresIn: "2h"});
-    res.json({ token });
+  res.sendStatus(200);
 });
 
-// Middleware — ellenőrzi a JWT-t
-function requireAuth(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ error: "Missing Authorization header" });
 
-  const token = auth.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Missing token" });
-
+//Ez egy védett GET végpont, ami csak akkor ad választ, ha a kéréshez érvényes JWT token tartozik.
+app.get("/protected", (req, res) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(401).json({ error: "Invalid token" });
-  }
-}
+    const token = req.cookies.token;
+    if (!token) throw new Error();
 
-// Védett végpont
-app.get("/protected", requireAuth, (req, res) => {
-  res.json({ message: "Sikeresen beléptél!", user: req.user });
+    jwt.verify(token, process.env.JWT_SECRET);
+    res.sendStatus(200);
+  } catch {
+    res.sendStatus(401);
+  }
 });
+
+app.post("/logout", (req, res) => {
+  res.clearCookie("token");
+  res.sendStatus(200);
+});
+
 
 app.listen(process.env.PORT, () =>
   console.log(`API running on port ${process.env.PORT}`)
