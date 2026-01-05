@@ -22,8 +22,8 @@ app.post("/login", (req, res) => {
   const { key } = req.body;
   if (key !== process.env.AUTH_KEY) return res.status(401).json({ error: "Invalid key" });
   const token = jwt.sign({ access: true }, process.env.JWT_SECRET,{ expiresIn: "2h" });
-  
-  const isProd = process.env.NODE_ENV === "production";
+
+  const isProd = process.env.NODE_ENV == "production";
   res.cookie("token", token, {
     httpOnly: true,   // JS NEM fér hozzá
     secure: isProd,
